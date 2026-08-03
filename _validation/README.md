@@ -33,7 +33,7 @@ ______________________________________________________________________
 
 代码已推到 GitHub，直接 fetch 即可，**不需要传任何文件**。
 
-分支：`rloo-review-fix`，仓库 `https://github.com/Saddss/Relax.git`，commit `75bf8c4d2d710aa3cdefd848c5a9a2a0d1b2fd28`。
+分支：`rloo-review-fix`，仓库 `https://github.com/Saddss/Relax.git`。
 
 ```bash
 # ↓ 只改这一行
@@ -52,8 +52,11 @@ git checkout -B rloo-review-fix saddss/rloo-review-fix
 ```bash
 cd "$REPO"
 
-EXPECT=75bf8c4d2d710aa3cdefd848c5a9a2a0d1b2fd28
-test "$(git rev-parse HEAD)" = "$EXPECT" && echo "✓ commit 一致" || { echo "✗ commit 不符，停止"; exit 1; }
+# 不比对固定 SHA（分支可能有后续文档提交）；比对本地是否就是远端分支尖端
+git fetch saddss rloo-review-fix
+test "$(git rev-parse HEAD)" = "$(git rev-parse saddss/rloo-review-fix)" \
+  && echo "✓ 与远端 rloo-review-fix 一致" \
+  || { echo "✗ 不是远端分支尖端，执行 git checkout -B rloo-review-fix saddss/rloo-review-fix 后重试"; exit 1; }
 git status --porcelain | grep -q . && { echo "✗ 工作区不干净，停止"; exit 1; } || echo "✓ 工作区干净"
 
 # 查符号而不只查 commit：容器里挂载的可能是另一个副本，查符号是查真正被 import 的那份文件

@@ -10,7 +10,12 @@ echo
 echo '## 1. 环境与闸门'
 echo
 echo '```'
-echo "commit          : $(git rev-parse HEAD)  $([ "$(git rev-parse HEAD)" = "75bf8c4d2d710aa3cdefd848c5a9a2a0d1b2fd28" ] && echo OK || echo '<-- FAIL: 不是被测 commit')"
+echo "commit          : $(git rev-parse HEAD)"
+_remote_tip=""
+for _r in saddss origin; do
+  _t=$(git rev-parse "$_r/rloo-review-fix" 2>/dev/null) && { _remote_tip=$_t; break; }
+done
+echo "分支            : $(git rev-parse --abbrev-ref HEAD)  $([ -n "$_remote_tip" ] && { [ "$(git rev-parse HEAD)" = "$_remote_tip" ] && echo '= 远端 rloo-review-fix，OK' || echo '<-- 与远端 rloo-review-fix 不一致'; } || echo '(未找到远端 rloo-review-fix，跳过比对)')"
 echo "工作区干净      : $(git status --porcelain | grep -q . && echo NO || echo YES)"
 echo "镜像 digest     : $(docker images --no-trunc --format '{{.Repository}}:{{.Tag}} {{.ID}}' | grep relaxrl | head -1)"
 echo "驱动 / CUDA     : $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1) / $(nvidia-smi | grep -oE 'CUDA Version: [0-9.]+' | head -1)"
