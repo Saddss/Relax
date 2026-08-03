@@ -97,12 +97,16 @@ echo
 echo '## 3. 负向组 D'
 echo
 echo '```'
-if grep -q "exactly one optimizer step per rollout" /tmp/rloo-negative.log 2>/dev/null; then
+if [ ! -f /tmp/rloo-negative.log ]; then
+  # 区分"没跑"和"跑了但 guard 没触发"。第 2 轮按计划不设负向组（该 guard 在参数
+  # 校验阶段触发、不需要 GPU），此时日志不存在是预期，不该报成 FAIL。
+  echo "未运行 : 日志不存在，本轮未包含负向组（第 2 轮计划如此）"
+elif grep -q "exactly one optimizer step per rollout" /tmp/rloo-negative.log 2>/dev/null; then
   echo "guard 触发 : YES"
   echo "报错原文   :"
   grep -A2 "exactly one optimizer step per rollout" /tmp/rloo-negative.log | head -6
 else
-  echo "guard 触发 : NO  <-- 这是问题，请把 /tmp/rloo-negative.log 一起发回"
+  echo "guard 触发 : NO  <-- 跑了负向组但 guard 没拦住，这是问题"
 fi
 echo '```'
 echo
