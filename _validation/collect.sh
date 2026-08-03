@@ -10,16 +10,33 @@ echo
 echo '## 1. 环境与闸门'
 echo
 echo '```'
-echo "commit          : $(git rev-parse HEAD)"
-_remote_tip=""
-for _r in saddss origin; do
-  _t=$(git rev-parse "$_r/rloo-review-fix" 2>/dev/null) && { _remote_tip=$_t; break; }
-done
-echo "分支            : $(git rev-parse --abbrev-ref HEAD)  $([ -n "$_remote_tip" ] && { [ "$(git rev-parse HEAD)" = "$_remote_tip" ] && echo '= 远端 rloo-review-fix，OK' || echo '<-- 与远端 rloo-review-fix 不一致'; } || echo '(未找到远端 rloo-review-fix，跳过比对)')"
-echo "工作区干净      : $(git status --porcelain | grep -q . && echo NO || echo YES)"
-echo "镜像 digest     : $(docker images --no-trunc --format '{{.Repository}}:{{.Tag}} {{.ID}}' | grep relaxrl | head -1)"
-echo "驱动 / CUDA     : $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1) / $(nvidia-smi | grep -oE 'CUDA Version: [0-9.]+' | head -1)"
-echo "GPU             : $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1) x $(nvidia-smi -L | wc -l)"
+# git 与 docker 在容器内可能都不可用（仓库未挂 .git、镜像里没有 docker CLI）。
+# 每项都单独降级并说明原因，而不是留空 —— 空值会被误读成"没检查"。
+if git rev-parse HEAD >/dev/null 2>&1; then
+  echo "commit          : $(git rev-parse HEAD)"
+  _remote_tip=""
+  for _r in saddss origin; do
+    _t=$(git rev-parse "$_r/rloo-review-fix" 2>/dev/null) && { _remote_tip=$_t; break; }
+  done
+  echo "分支            : $(git rev-parse --abbrev-ref HEAD)  $([ -n "$_remote_tip" ] && { [ "$(git rev-parse HEAD)" = "$_remote_tip" ] && echo '= 远端 rloo-review-fix，OK' || echo '<-- 与远端 rloo-review-fix 不一致'; } || echo '(未 fetch 远端，跳过比对)')"
+  echo "工作区干净      : $(git status --porcelain | grep -q . && echo NO || echo YES)"
+else
+  echo "commit          : <git 不可用，请在宿主机 git rev-parse HEAD 后手填>"
+  echo "分支            : <同上>"
+  echo "工作区干净      : <同上>"
+fi
+if command -v docker >/dev/null 2>&1; then
+  echo "镜像 digest     : $(docker images --no-trunc --format '{{.Repository}}:{{.Tag}} {{.ID}}' | grep relaxrl | head -1)"
+else
+  echo "镜像 digest     : <容器内无 docker CLI，请在宿主机 docker images --digests | grep relaxrl 后手填>"
+fi
+if nvidia-smi -L >/dev/null 2>&1; then
+  echo "驱动 / CUDA     : $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1) / $(nvidia-smi | grep -oE 'CUDA Version: [0-9.]+' | head -1)"
+  echo "GPU             : $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1) x $(nvidia-smi -L | wc -l)"
+else
+  echo "驱动 / CUDA     : <nvidia-smi 不可用（容器未带 --gpus?），请在宿主机手填>"
+  echo "GPU             : <同上>  日志中的 world size: $(grep -ohE 'using world size: [0-9]+' "${LOGS[A]}" "${LOGS[B]}" "${LOGS[C]}" 2>/dev/null | tail -1)"
+fi
 echo '符号检查        :' \
   "$(grep -q 'def get_cp_local_num_samples' relax/backends/megatron/cp_utils.py && \
      grep -q 'def uses_completion_level_reduction' relax/backends/megatron/loss.py && \
@@ -37,7 +54,15 @@ for g in A B C; do
   echo '```'
   echo "日志文件          : $f"
   exit_code=$(grep -oE 'EXIT=[0-9]+' "$f" | tail -1 | cut -d= -f2)
-  got_cp=$(grep -oE 'context_parallel_size \.+ [0-9]+' "$f" | tail -1 | grep -oE '[0-9]+$')
+  # Read the CP degree from Megatron's own startup banner ("context-parallel size: N"),
+  # which reports what the run actually used. Do NOT grep the argument dump for
+  # `context_parallel_size`: that substring also matches
+  # `min_dynamic_context_parallel_size ... 1`, and `tail -1` then picks up the
+  # wrong line and reports CP=1 for every run.
+  got_cp=$(grep -oE 'context-parallel size: [0-9]+' "$f" | tail -1 | grep -oE '[0-9]+$')
+  if [ -z "$got_cp" ]; then
+    got_cp=$(grep -oE '^  context_parallel_size \.+ [0-9]+' "$f" | tail -1 | grep -oE '[0-9]+$')
+  fi
   got_clip=$(grep -oE 'clip_grad \.+ [0-9.]+' "$f" | tail -1 | grep -oE '[0-9.]+$')
   echo "退出码            : ${exit_code:-<无 EXIT= 标记，运行未结束>}  $([ "${exit_code:-x}" = 0 ] && echo OK || echo '<-- FAIL')"
   echo "日志确认 cp_size  : ${got_cp:-?}  (期望 ${EXPECT_CP[$g]})  $([ "${got_cp:-x}" = "${EXPECT_CP[$g]}" ] && echo OK || echo '<-- FAIL: 环境变量没生效，跑的不是目标 CP')"

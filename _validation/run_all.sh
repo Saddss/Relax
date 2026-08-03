@@ -17,6 +17,13 @@ export MODEL_DIR DATA_DIR
 export NUM_ROLLOUT="${NUM_ROLLOUT:=3}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:=0,1,2,3,4,5,6,7}"
 
+# GPUs per role. The recipe defaults to the single-GPU {"actor":[1,1],"rollout":[1,1]},
+# which cannot run CP>1: Megatron requires world_size % (tp*pp*cp) == 0, so a CP=2
+# group would die in validate_args with "world size (1) is not divisible by
+# total_model_size (2)". Every group here therefore needs all visible GPUs.
+_ngpu=$(awk -F, '{print NF}' <<<"$CUDA_VISIBLE_DEVICES")
+export RESOURCE="${RESOURCE:-{\"actor\": [1, $_ngpu], \"rollout\": [1, $_ngpu]\}}"
+
 if [ ! -f "$RECIPE" ]; then
     echo "✗ 找不到 $RECIPE —— 请在 Relax 仓库根目录运行"
     exit 1

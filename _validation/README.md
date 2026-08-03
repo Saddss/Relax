@@ -140,6 +140,13 @@ DATA_DIR=/path/to/shared/data \
 
 `MODEL_DIR` 下要有 `Qwen3-0.6B/`，`DATA_DIR` 下要有 `gsm8k/main/train-00000-of-00001.parquet`。默认 8 卡、每组 3 个 rollout；要改用 `NUM_ROLLOUT=5` 或 `CUDA_VISIBLE_DEVICES=...` 覆盖。
 
+`run_all.sh` 会按可见卡数自动设 `RESOURCE='{"actor": [1, N], "rollout": [1, N]}'`。**这一步必须有**：recipe 的默认值是单卡 `[1,1]`，而 Megatron 要求 `world_size % (tp*pp*cp) == 0`，所以 CP=2 在 `[1,1]` 下会直接死在 `validate_args`（`world size (1) is not divisible by total_model_size (2)`），根本进不到被测代码。手动逐组跑时必须自己带上 `RESOURCE`。
+
+**在宿主机跑还是容器里跑**：`collect.sh` 的第 1 节要用 `git` 和 `docker` 采集环境信息，这两个在训练容器里通常都没有。两种做法都可以：
+
+- **在宿主机跑 `run_all.sh`**（推荐）：环境信息完整。注意 recipe 会 `source local.sh`，其中有 `pkill -9 python`，会杀掉宿主机上其它 python 进程 —— 机器上有别的任务时不要这样做。
+- **在容器里跑**：安全，但第 1 节的 commit / 镜像 digest / 驱动会显示成 `<...请在宿主机手填>`。按提示在宿主机执行 `git rev-parse HEAD`、`docker images --digests | grep relaxrl`、`nvidia-smi` 补上即可，§2–4 全部从日志读取、不受影响。
+
 脚本做的事：按 A→B→C→D 顺序跑，每组之间 `ray stop --force` + `pkill sglang` 清理残留，日志写到 `/tmp/rloo-*.log`，最后自动执行 `collect.sh` 生成 `./RESULT.md` 并在终端打印跨组一致性判定。
 
 <details>
@@ -149,6 +156,8 @@ DATA_DIR=/path/to/shared/data \
 cd "$REPO"
 export MODEL_DIR=/path/to/shared/model DATA_DIR=/path/to/shared/data
 export NUM_ROLLOUT=3 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+# 必须带：默认 [1,1] 无法整除 CP>1 的 total_model_size
+export RESOURCE='{"actor": [1, 8], "rollout": [1, 8]}'
 R=examples/algorithms/run-qwen3-0.6B-1xgpu-gsm8k-rloo.sh
 
 ROLLOUT_BATCH_SIZE=8 GLOBAL_BATCH_SIZE=64 MICRO_BATCH_SIZE=8 bash $R 2>&1 | tee /tmp/rloo-cp1-dp8.log
